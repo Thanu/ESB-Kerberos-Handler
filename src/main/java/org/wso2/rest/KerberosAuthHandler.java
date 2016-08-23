@@ -17,6 +17,13 @@ public class KerberosAuthHandler implements Handler {
 
     private static Log log = LogFactory.getLog(KerberosAuthHandler.class);
 
+    public void init(){
+        KerberosAuthentication.init();
+    }
+    public KerberosAuthHandler() {
+        this.init();
+    }
+
     public void addProperty(String s, Object o) {
         //To change body of implemented methods use File | Settings | File Templates.
     }
@@ -45,18 +52,16 @@ public class KerberosAuthHandler implements Handler {
                 if (authHeader != null) {
                     String negotiate = authHeader.substring(0, 10);
                     if ("Negotiate".equals(negotiate.trim())) {
-                        KerberosAuthenticationUtil.init();
                         String authToken = authHeader.substring(10).trim();
                         clientToken = Base64.decodeBase64(authToken.getBytes());
                     }
-                    KerberosAuthenticationUtil kerberosAuthenticationUtil = new KerberosAuthenticationUtil();
                     try {
-                        serverToken = kerberosAuthenticationUtil.processToken(KerberosAuthenticationUtil.getKerberosCredentials(), clientToken);
+                        serverToken = KerberosAuthentication.processToken(clientToken);
                     } catch (GSSException e) {
                         log.error(e.getMessage(), e);
                     }
-                    if (!kerberosAuthenticationUtil.getContextEstablised()) {
-                        return unAuthorizedUser(headersMap, axis2MessageContext, messageContext, serverToken);
+                    if (serverToken == null) {
+                        return unAuthorizedUser(headersMap, axis2MessageContext, messageContext, clientToken);
                     } else {
                         return authorized(axis2MessageContext);
                     }

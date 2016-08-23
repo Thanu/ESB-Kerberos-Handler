@@ -26,19 +26,18 @@ import javax.security.auth.login.AppConfigurationEntry;
 import javax.security.auth.login.AppConfigurationEntry.LoginModuleControlFlag;
 
 
-public class KerberosAuthenticationUtil {
-    private static Log log = LogFactory.getLog(KerberosAuthenticationUtil.class);
-    static boolean isEstablished;
-    static String spn;
-    static String realm;
-    static String keytab;
-    private static transient GSSCredential localKerberosCredentials;
+public class KerberosAuthentication {
+    private static Log log = LogFactory.getLog(KerberosAuthentication.class);
+    private static String spn;
+    private static String realm;
+    private static String keytab;
+    private static GSSCredential localKerberosCredentials;
     private static GSSManager gssManager = GSSManager.getInstance();
 
     /**
      * Set jaas.conf and krb5 paths
      */
-    public static void setConfigFilePaths() {
+    private static void setConfigFilePaths() {
         Properties props = new Properties();
         try {
             props.load(new FileInputStream("./repository/conf/server.properties"));
@@ -55,14 +54,14 @@ public class KerberosAuthenticationUtil {
 
     public static void init() {
         try {
-            KerberosAuthenticationUtil.setConfigFilePaths();
+            KerberosAuthentication.setConfigFilePaths();
             setKerberosCredentials(createCredentials());
         } catch (PrivilegedActionException | LoginException | GSSException e) {
             log.error(e.getMessage());
         }
     }
 
-    public static Configuration getJaasKrb5TicketCfg(
+    private static Configuration getJaasKrb5TicketCfg(
             final String principal, final String realm, final File keytab) {
         return new Configuration() {
             @Override
@@ -96,8 +95,10 @@ public class KerberosAuthenticationUtil {
         try {
             loginContext.login();
         } catch (LoginException e) {
+            //TODO : Handle this properly
             log.error(e.getMessage());
         }
+
         return createCredentialsForSubject(loginContext.getSubject());
     }
 
@@ -115,41 +116,22 @@ public class KerberosAuthenticationUtil {
         return Subject.doAs(subject, action);
     }
 
-    public static GSSCredential createCredentials()
+    private static GSSCredential createCredentials()
             throws PrivilegedActionException, LoginException, GSSException {
         GSSCredential gssCredential = createServerCredentials();
         return gssCredential;
     }
 
-    public static byte[] processToken(GSSCredential gssCredentials, byte[] gssToken) throws GSSException {
-        GSSManager manager = GSSManager.getInstance();
-        GSSContext context = manager.createContext(gssCredentials);
+    public static byte[] processToken(byte[] gssToken) throws GSSException {
+        GSSContext context = gssManager.createContext(localKerberosCredentials);
         byte[] serverToken = context.acceptSecContext(gssToken, 0, gssToken.length);
-        KerberosAuthenticationUtil kerberosAuthenticationUtil = new KerberosAuthenticationUtil();
-        if (context.isEstablished()) {
-            kerberosAuthenticationUtil.setContextEstablished(true);
-        } else {
-            kerberosAuthenticationUtil.setContextEstablished(false);
+        if (!context.isEstablished()) {
+            return null;
         }
-
         return serverToken;
-    }
-
-
-    private void setContextEstablished(boolean established) {
-        isEstablished = established;
-    }
-
-    public boolean getContextEstablised() {
-        return isEstablished;
     }
 
     private static void setKerberosCredentials(GSSCredential gssCredential) {
         localKerberosCredentials = gssCredential;
     }
-
-    public static GSSCredential getKerberosCredentials() {
-        return localKerberosCredentials;
-    }
-
 }
