@@ -7,22 +7,13 @@ import org.apache.synapse.MessageContext;
 import org.apache.synapse.core.axis2.Axis2MessageContext;
 import org.apache.synapse.core.axis2.Axis2Sender;
 import org.apache.synapse.rest.Handler;
-
 import org.ietf.jgss.GSSException;
 
 import java.util.Map;
 
-
 public class KerberosAuthHandler implements Handler {
 
     private static Log log = LogFactory.getLog(KerberosAuthHandler.class);
-
-    public void init(){
-        KerberosAuthentication.init();
-    }
-    public KerberosAuthHandler() {
-        this.init();
-    }
 
     public void addProperty(String s, Object o) {
         //To change body of implemented methods use File | Settings | File Templates.
@@ -52,16 +43,18 @@ public class KerberosAuthHandler implements Handler {
                 if (authHeader != null) {
                     String negotiate = authHeader.substring(0, 10);
                     if ("Negotiate".equals(negotiate.trim())) {
+                        KerberosAuthenticationUtil.init();
                         String authToken = authHeader.substring(10).trim();
                         clientToken = Base64.decodeBase64(authToken.getBytes());
                     }
+                    KerberosAuthenticationUtil kerberosAuthenticationUtil = new KerberosAuthenticationUtil();
                     try {
-                        serverToken = KerberosAuthentication.processToken(clientToken);
+                        serverToken = kerberosAuthenticationUtil.processToken(KerberosAuthenticationUtil.getKerberosCredentials(), clientToken);
                     } catch (GSSException e) {
                         log.error(e.getMessage(), e);
                     }
-                    if (serverToken == null) {
-                        return unAuthorizedUser(headersMap, axis2MessageContext, messageContext, clientToken);
+                    if (!kerberosAuthenticationUtil.getContextEstablised()) {
+                        return unAuthorizedUser(headersMap, axis2MessageContext, messageContext, serverToken);
                     } else {
                         return authorized(axis2MessageContext);
                     }

@@ -5,39 +5,59 @@ import org.apache.commons.logging.LogFactory;
 import org.ietf.jgss.*;
 
 import javax.security.auth.Subject;
-import javax.security.auth.login.LoginContext;
-import javax.security.auth.login.LoginException;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.util.Properties;
-
-import java.security.PrivilegedActionException;
-import java.security.PrivilegedExceptionAction;
 import javax.security.auth.kerberos.KerberosPrincipal;
-
-import java.security.Principal;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.HashMap;
-import java.io.File;
-import java.util.Set;
-import javax.security.auth.login.Configuration;
 import javax.security.auth.login.AppConfigurationEntry;
 import javax.security.auth.login.AppConfigurationEntry.LoginModuleControlFlag;
+import javax.security.auth.login.Configuration;
+import javax.security.auth.login.LoginContext;
+import javax.security.auth.login.LoginException;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.security.Principal;
+import java.security.PrivilegedActionException;
+import java.security.PrivilegedExceptionAction;
+import java.util.*;
 
 
-public class KerberosAuthentication {
-    private static Log log = LogFactory.getLog(KerberosAuthentication.class);
-    private static String spn;
-    private static String realm;
-    private static String keytab;
-    private static GSSCredential localKerberosCredentials;
-    private static GSSManager gssManager = GSSManager.getInstance();
+public class KerberosAuthenticator {
+    private static Log log = LogFactory.getLog(KerberosAuthenticator.class);
+    private String spn;
+    private String realm;
+    private String keytab;
+    private GSSCredential localKerberosCredentials;
+    private GSSManager gssManager = GSSManager.getInstance();
+
+    private static KerberosAuthenticator instance;
+
+    private KerberosAuthenticator(){
+        this.init();
+    }
+
+    public void init() {
+        try {
+            setConfigFilePaths();
+            setKerberosCredentials(createCredentials());
+        } catch (PrivilegedActionException | LoginException | GSSException e) {
+            log.error(e.getMessage());
+        }
+    }
+
+    public static KerberosAuthenticator getInstance(){
+        if(instance == null){
+            synchronized (KerberosAuthenticator.class) {
+                if(instance == null){
+                    instance = new KerberosAuthenticator();
+                }
+            }
+        }
+        return instance;
+    }
 
     /**
      * Set jaas.conf and krb5 paths
      */
-    private static void setConfigFilePaths() {
+    private void setConfigFilePaths() {
         Properties props = new Properties();
         try {
             props.load(new FileInputStream("./repository/conf/server.properties"));
@@ -51,17 +71,7 @@ public class KerberosAuthentication {
         keytab = props.getProperty("keyTab");
     }
 
-
-    public static void init() {
-        try {
-            KerberosAuthentication.setConfigFilePaths();
-            setKerberosCredentials(createCredentials());
-        } catch (PrivilegedActionException | LoginException | GSSException e) {
-            log.error(e.getMessage());
-        }
-    }
-
-    private static Configuration getJaasKrb5TicketCfg(
+    private Configuration getJaasKrb5TicketCfg(
             final String principal, final String realm, final File keytab) {
         return new Configuration() {
             @Override
@@ -84,7 +94,7 @@ public class KerberosAuthentication {
         };
     }
 
-    private static GSSCredential createServerCredentials()
+    private GSSCredential createServerCredentials()
             throws PrivilegedActionException, LoginException, GSSException {
         Principal principal = new KerberosPrincipal(spn, KerberosPrincipal.KRB_NT_SRV_INST);
         Set<Principal> principals = new HashSet<Principal>();
@@ -103,7 +113,7 @@ public class KerberosAuthentication {
     }
 
 
-    private static GSSCredential createCredentialsForSubject(final Subject subject) throws PrivilegedActionException, GSSException {
+    private GSSCredential createCredentialsForSubject(final Subject subject) throws PrivilegedActionException, GSSException {
         final Oid mechOid = new Oid("1.3.6.1.5.5.2");
         final PrivilegedExceptionAction<GSSCredential> action =
                 new PrivilegedExceptionAction<GSSCredential>() {
@@ -116,22 +126,22 @@ public class KerberosAuthentication {
         return Subject.doAs(subject, action);
     }
 
-    private static GSSCredential createCredentials()
+    private GSSCredential createCredentials()
             throws PrivilegedActionException, LoginException, GSSException {
         GSSCredential gssCredential = createServerCredentials();
         return gssCredential;
     }
 
-    public static byte[] processToken(byte[] gssToken) throws GSSException {
-        GSSContext context = gssManager.createContext(localKerberosCredentials);
-        byte[] serverToken = context.acceptSecContext(gssToken, 0, gssToken.length);
-        if (!context.isEstablished()) {
-            return null;
-        }
-        return serverToken;
+    private void setKerberosCredentials(GSSCredential gssCredential) {
+        localKerberosCredentials = gssCredential;
     }
 
-    private static void setKerberosCredentials(GSSCredential gssCredential) {
-        localKerberosCredentials = gssCredential;
+    public byte[] processToken(byte[] gssToken) throws GSSException {
+        GSSContext context = gssManager.createContext(localKerberosCredentials);
+        byte[] serverToken = context.acceptSecContext(gssToken, 0, gssToken.length);
+        if (context.isEstablished()) {
+            return serverToken;
+        }
+        return null;
     }
 }
