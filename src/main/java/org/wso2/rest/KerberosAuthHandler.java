@@ -18,7 +18,7 @@
  *
  */
 
-package org.wso2.rest;
+package org.wso2.rest; // TODO: what should be the package name
 
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.logging.Log;
@@ -40,14 +40,9 @@ public class KerberosAuthHandler implements Handler, ManagedLifecycle {
 
     private static Log log = LogFactory.getLog(KerberosAuthHandler.class);
     private KerberosAuthenticator kerberosAuthenticator;
-
-    public void init() {
-        kerberosAuthenticator = KerberosAuthenticator.getInstance();
-    }
-
-    public KerberosAuthHandler() {
-        this.init();
-    }
+    private String serverPrincipal;
+    private String realm;
+    private String keyTabFilePath;
 
     public void addProperty(String s, Object o) {
         //To change body of implemented methods use File | Settings | File Templates.
@@ -76,20 +71,20 @@ public class KerberosAuthHandler implements Handler, ManagedLifecycle {
                 String authHeader = (String) headersMap.get("Authorization");
                 if (authHeader != null) {
                     String negotiate = authHeader.substring(0, 10);
-                    if ("Negotiate".equals(negotiate.trim())) {
+                    if ("Negotiate".equals(negotiate.trim()) && kerberosAuthenticator != null) {
                         String authToken = authHeader.substring(10).trim();
                         clientToken = Base64.decodeBase64(authToken.getBytes());
+                        try {
+                            serverToken = kerberosAuthenticator.processToken(clientToken);
+                            //TODO: what if the exception occurred, return false
+                        } catch (GSSException ex) {
+                            log.error("Exception accepting client token", ex);
+                        }
                     }
-                    //TODO: DO we need clientToken to be null check
-                    try {
-                        serverToken = kerberosAuthenticator.processToken(clientToken);
-                    } catch (GSSException e) {
-                        log.error(e.getMessage(), e);
-                    }
-                    if (serverToken == null || serverToken.length == 0) {
-                        return unAuthorizedUser(headersMap, axis2MessageContext, messageContext, clientToken);
-                    } else {
+                    if (kerberosAuthenticator.isEstablished()) {
                         return authorized(axis2MessageContext);
+                    } else {
+                        return unAuthorizedUser(headersMap, axis2MessageContext, messageContext, serverToken);
                     }
                 } else {
                     return accessForbidden(headersMap, axis2MessageContext, messageContext);
@@ -106,8 +101,7 @@ public class KerberosAuthHandler implements Handler, ManagedLifecycle {
         headersMap.clear();
         try {
             if (serverToken != null) {
-                byte[] outServerToken = Base64.encodeBase64(serverToken);
-                outServerTokenString = new String(outServerToken, "UTF-8");
+                outServerTokenString = new String(serverToken, "UTF-8");
             }
             axis2MessageContext.setProperty("HTTP_SC", "401");
             if (outServerTokenString != null) {
@@ -142,13 +136,28 @@ public class KerberosAuthHandler implements Handler, ManagedLifecycle {
         return false;
     }
 
+    //TODO: currently handler property set by setter method
+    public void setServerPrincipal(String serverPrincipal) {
+        this.serverPrincipal = serverPrincipal;
+    }
+
+    public void setRealm(String realm) {
+        this.realm = realm;
+    }
+
+    public void setKeyTabFilePath(String keyTabFilePath) {
+        this.keyTabFilePath = keyTabFilePath;
+    }
+
     @Override
     public void init(SynapseEnvironment synapseEnvironment) {
-
+        if (serverPrincipal != null && realm != null && keyTabFilePath != null) {
+            kerberosAuthenticator = new KerberosAuthenticator(serverPrincipal, realm, keyTabFilePath);
+        }
     }
 
     @Override
     public void destroy() {
-
+        //TODO: Do we need handle this scenario
     }
 }

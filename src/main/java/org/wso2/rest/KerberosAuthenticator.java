@@ -36,14 +36,11 @@ import javax.security.auth.login.Configuration;
 import javax.security.auth.login.LoginContext;
 import javax.security.auth.login.LoginException;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
 import java.security.Principal;
 import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Properties;
 import java.util.Set;
 import java.util.HashSet;
 
@@ -52,66 +49,31 @@ public class KerberosAuthenticator {
     private static final Log log = LogFactory.getLog(KerberosAuthenticator.class);
     private String serverPrincipal;
     private String realm;
-    private String keytab;
-
-    private GSSCredential localKerberosCredentials;
+    private File keyTabFile;
+    private boolean isEstablished;
+    private GSSCredential kerberosCredentials;
     private GSSManager gssManager = GSSManager.getInstance();
 
-    private static KerberosAuthenticator instance;
-
-    private KerberosAuthenticator() {
-        this.init();
-    }
-
-    public void init() {
+    public KerberosAuthenticator(String serverPrincipal, String realm, String keyTabFilePath) {
+        this.serverPrincipal = serverPrincipal;
+        this.realm = realm;
+        this.keyTabFile = new File(keyTabFilePath);
         try {
-            setConfigFilePaths();
-            setKerberosCredentials(createCredentials());
+            kerberosCredentials = createCredentials();
         } catch (PrivilegedActionException | LoginException | GSSException e) {
             //TODO: what if the exception occurred
             log.error(e.getMessage());
         }
     }
 
-    public static KerberosAuthenticator getInstance() {
-        if (instance == null) {
-            synchronized (KerberosAuthenticator.class) {
-                if (instance == null) {
-                    instance = new KerberosAuthenticator();
-                }
-            }
-        }
-        return instance;
-    }
-
-    /**
-     * Set jaas.conf and krb5 paths
-     */
-    private void setConfigFilePaths() {
-        Properties props = new Properties();
-        try {
-            props.load(new FileInputStream("." + File.separator + "repository" + File.separator + "conf" +
-                    File.separator + "server.properties"));
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        System.setProperty("sun.security.krb5.debug", "true");
-        System.setProperty("java.security.auth.login.config", "." + File.separator + "repository" + File.separator + "conf" +
-                File.separator + "jaas.conf");
-        serverPrincipal = props.getProperty("principal");
-        realm = props.getProperty("realm");
-        keytab = props.getProperty("keyTab");
-    }
-
-    private Configuration getJaasKrb5TicketCfg(
-            final String principal, final String realm, final File keytab) {
+    private Configuration getJaasKrb5TicketCfg() {
         return new Configuration() {
             @Override
             public AppConfigurationEntry[] getAppConfigurationEntry(String name) {
                 Map<String, String> options = new HashMap<String, String>();
-                options.put("principal", principal);
+                options.put("principal", serverPrincipal);
                 options.put("realm", realm);
-                options.put("keyTab", keytab.getAbsolutePath());
+                options.put("keyTab", keyTabFile.getAbsolutePath());
                 options.put("doNotPrompt", "true");
                 options.put("useKeyTab", "true");
                 options.put("storeKey", "true");
@@ -126,28 +88,29 @@ public class KerberosAuthenticator {
         };
     }
 
-    private GSSCredential createServerCredentials()
+    /**
+     * Process a server credential using the kerberos parameters.
+     *
+     * @return a generated GSSCredential object for the given kerberos parameters.
+     * @throws PrivilegedActionException
+     * @throws LoginException
+     * @throws GSSException
+     */
+    private GSSCredential createCredentials()
             throws PrivilegedActionException, LoginException, GSSException {
         Principal principal = new KerberosPrincipal(serverPrincipal, KerberosPrincipal.KRB_NT_SRV_INST);
         Set<Principal> principals = new HashSet<Principal>();
         principals.add(principal);
         Subject subject = new Subject(false, principals, new HashSet<Object>(),
                 new HashSet<Object>());
-        LoginContext loginContext = new LoginContext("Server", subject, null, getJaasKrb5TicketCfg(serverPrincipal,
-                realm, new File(keytab)));
+        LoginContext loginContext = new LoginContext("Server", subject, null, getJaasKrb5TicketCfg());
         try {
             loginContext.login();
         } catch (LoginException e) {
-            //TODO : Handle this properly
+            //TODO: what if the exception occurred
             log.error(e.getMessage());
         }
 
-        return createCredentialsForSubject(loginContext.getSubject());
-    }
-
-
-    private GSSCredential createCredentialsForSubject(final Subject subject) throws PrivilegedActionException,
-            GSSException {
         final Oid mechOid = new Oid("1.3.6.1.5.5.2");
         final PrivilegedExceptionAction<GSSCredential> action =
                 new PrivilegedExceptionAction<GSSCredential>() {
@@ -157,25 +120,25 @@ public class KerberosAuthenticator {
                     }
                 };
 
-        return Subject.doAs(subject, action);
-    }
-
-    private GSSCredential createCredentials()
-            throws PrivilegedActionException, LoginException, GSSException {
-        GSSCredential gssCredential = createServerCredentials();
-        return gssCredential;
-    }
-
-    private void setKerberosCredentials(GSSCredential gssCredential) {
-        localKerberosCredentials = gssCredential;
+        return Subject.doAs(loginContext.getSubject(), action);
     }
 
     public byte[] processToken(byte[] gssToken) throws GSSException {
-        GSSContext context = gssManager.createContext(localKerberosCredentials);
+        GSSContext context = gssManager.createContext(kerberosCredentials);
         byte[] serverToken = context.acceptSecContext(gssToken, 0, gssToken.length);
         if (context.isEstablished()) {
-            return serverToken;
+            setContextEstablished(true);
+        } else {
+            setContextEstablished(false);
         }
-        return new byte[0];
+        return serverToken;
+    }
+
+    public boolean isEstablished() {
+        return isEstablished;
+    }
+
+    private void setContextEstablished(boolean established) {
+        isEstablished = established;
     }
 }
