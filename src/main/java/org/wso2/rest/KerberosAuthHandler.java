@@ -31,6 +31,8 @@ import org.apache.synapse.core.axis2.Axis2Sender;
 import org.apache.synapse.rest.Handler;
 import org.ietf.jgss.GSSException;
 
+import javax.security.auth.login.LoginException;
+import java.security.PrivilegedActionException;
 import java.util.Map;
 
 /**
@@ -43,6 +45,18 @@ public class KerberosAuthHandler implements Handler, ManagedLifecycle {
     private String serverPrincipal;
     private String realm;
     private String keyTabFilePath;
+
+    @Override
+    public void init(SynapseEnvironment synapseEnvironment) {
+        if (serverPrincipal != null && realm != null && keyTabFilePath != null) {
+            try {
+                kerberosAuthenticator = new KerberosAuthenticator(serverPrincipal, realm, keyTabFilePath);
+                //TODO: what if the exception occurred while object initialize.
+            } catch (LoginException | PrivilegedActionException | GSSException ex) {
+                log.error(ex.getMessage(), ex);
+            }
+        }
+    }
 
     public void addProperty(String s, Object o) {
         //To change body of implemented methods use File | Settings | File Templates.
@@ -69,14 +83,14 @@ public class KerberosAuthHandler implements Handler, ManagedLifecycle {
                 return unAuthorizedUser(headersMap, axis2MessageContext, messageContext, null);
             } else {
                 String authHeader = (String) headersMap.get("Authorization");
-                if (authHeader != null && kerberosAuthenticator != null) {
+                if (kerberosAuthenticator != null) {
                     String negotiate = authHeader.substring(0, 10);
                     if ("Negotiate".equals(negotiate.trim())) {
                         String authToken = authHeader.substring(10).trim();
                         clientToken = Base64.decodeBase64(authToken.getBytes());
                         try {
                             serverToken = kerberosAuthenticator.processToken(clientToken);
-                            //TODO: what if the exception occurred, return false
+                            //TODO: what if the exception occurred when token invalid.
                         } catch (GSSException ex) {
                             log.error("Exception accepting client token", ex);
                         }
@@ -85,7 +99,7 @@ public class KerberosAuthHandler implements Handler, ManagedLifecycle {
                         } else {
                             return unAuthorizedUser(headersMap, axis2MessageContext, messageContext, serverToken);
                         }
-                    }else{
+                    } else {
                         return unAuthorizedUser(headersMap, axis2MessageContext, messageContext, null);
                     }
                 } else {
@@ -96,14 +110,14 @@ public class KerberosAuthHandler implements Handler, ManagedLifecycle {
         return true;
     }
 
-
     private boolean unAuthorizedUser(Map headersMap, org.apache.axis2.context.MessageContext axis2MessageContext,
                                      MessageContext messageContext, byte[] serverToken) {
         String outServerTokenString = null;
         headersMap.clear();
         try {
             if (serverToken != null) {
-                outServerTokenString = new String(serverToken, "UTF-8");
+                byte[] outServerToken = Base64.encodeBase64(serverToken);
+                outServerTokenString = new String(outServerToken, "UTF-8");
             }
             axis2MessageContext.setProperty("HTTP_SC", "401");
             if (outServerTokenString != null) {
@@ -138,7 +152,7 @@ public class KerberosAuthHandler implements Handler, ManagedLifecycle {
         return false;
     }
 
-    //TODO: currently handler property set by setter method
+    //TODO: currently handler property set by setter method.
     public void setServerPrincipal(String serverPrincipal) {
         this.serverPrincipal = serverPrincipal;
     }
@@ -152,14 +166,7 @@ public class KerberosAuthHandler implements Handler, ManagedLifecycle {
     }
 
     @Override
-    public void init(SynapseEnvironment synapseEnvironment) {
-        if (serverPrincipal != null && realm != null && keyTabFilePath != null) {
-            kerberosAuthenticator = new KerberosAuthenticator(serverPrincipal, realm, keyTabFilePath);
-        }
-    }
-
-    @Override
     public void destroy() {
-        //TODO: Do we need handle this scenario
+        //TODO: Do we need handle this scenario.
     }
 }
