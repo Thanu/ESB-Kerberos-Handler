@@ -54,6 +54,12 @@ public class KerberosAuthenticator {
     private GSSCredential kerberosCredentials;
     private GSSManager gssManager = GSSManager.getInstance();
 
+    /**
+     * Authenticator initialize with the given kerberos parameters.
+     * @param serverPrincipal  a service or user that is known to the Kerberos system.
+     * @param realm a  domain name that is registered in Kerboros system.
+     * @param keyTabFilePath a path for generated keytab file where kerberos credentials encrypted.
+     */
     public KerberosAuthenticator(String serverPrincipal, String realm, String keyTabFilePath) {
         this.serverPrincipal = serverPrincipal;
         this.realm = realm;
@@ -88,14 +94,6 @@ public class KerberosAuthenticator {
         };
     }
 
-    /**
-     * Process a server credential using the kerberos parameters.
-     *
-     * @return a generated GSSCredential object for the given kerberos parameters.
-     * @throws PrivilegedActionException
-     * @throws LoginException
-     * @throws GSSException
-     */
     private GSSCredential createCredentials()
             throws PrivilegedActionException, LoginException, GSSException {
         Principal principal = new KerberosPrincipal(serverPrincipal, KerberosPrincipal.KRB_NT_SRV_INST);
@@ -123,6 +121,14 @@ public class KerberosAuthenticator {
         return Subject.doAs(loginContext.getSubject(), action);
     }
 
+    /**
+     * Accept a client token to establish a secure communication channel with AD.
+     * @param gssToken the client side token (client side, as in the token had
+     *        to be bootstrapped by the client and this peer uses that token
+     *        to update the GSSContext)
+     * @return server tokens that the server sends over to the peer.
+     * @throws GSSException
+     */
     public byte[] processToken(byte[] gssToken) throws GSSException {
         GSSContext context = gssManager.createContext(kerberosCredentials);
         byte[] serverToken = context.acceptSecContext(gssToken, 0, gssToken.length);
@@ -134,6 +140,11 @@ public class KerberosAuthenticator {
         return serverToken;
     }
 
+    /**
+     * State of the communication channel with the user token.
+     * @return a boolean to indicate whether the token was used to successfully
+     *         establish a communication channel.
+     */
     public boolean isEstablished() {
         return isEstablished;
     }

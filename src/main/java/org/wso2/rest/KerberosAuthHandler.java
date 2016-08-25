@@ -57,7 +57,7 @@ public class KerberosAuthHandler implements Handler, ManagedLifecycle {
     }
 
     public boolean handleRequest(MessageContext messageContext) {
-        byte[] clientToken = null;
+        byte[] clientToken;
         byte[] serverToken = null;
         org.apache.axis2.context.MessageContext axis2MessageContext
                 = ((Axis2MessageContext) messageContext).getAxis2MessageContext();
@@ -69,9 +69,9 @@ public class KerberosAuthHandler implements Handler, ManagedLifecycle {
                 return unAuthorizedUser(headersMap, axis2MessageContext, messageContext, null);
             } else {
                 String authHeader = (String) headersMap.get("Authorization");
-                if (authHeader != null) {
+                if (authHeader != null && kerberosAuthenticator != null) {
                     String negotiate = authHeader.substring(0, 10);
-                    if ("Negotiate".equals(negotiate.trim()) && kerberosAuthenticator != null) {
+                    if ("Negotiate".equals(negotiate.trim())) {
                         String authToken = authHeader.substring(10).trim();
                         clientToken = Base64.decodeBase64(authToken.getBytes());
                         try {
@@ -80,11 +80,13 @@ public class KerberosAuthHandler implements Handler, ManagedLifecycle {
                         } catch (GSSException ex) {
                             log.error("Exception accepting client token", ex);
                         }
-                    }
-                    if (kerberosAuthenticator.isEstablished()) {
-                        return authorized(axis2MessageContext);
-                    } else {
-                        return unAuthorizedUser(headersMap, axis2MessageContext, messageContext, serverToken);
+                        if (kerberosAuthenticator.isEstablished()) {
+                            return authorized(axis2MessageContext);
+                        } else {
+                            return unAuthorizedUser(headersMap, axis2MessageContext, messageContext, serverToken);
+                        }
+                    }else{
+                        return unAuthorizedUser(headersMap, axis2MessageContext, messageContext, null);
                     }
                 } else {
                     return accessForbidden(headersMap, axis2MessageContext, messageContext);
