@@ -20,8 +20,6 @@
 
 package org.wso2.rest;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.ietf.jgss.GSSCredential;
 import org.ietf.jgss.GSSException;
 import org.ietf.jgss.GSSManager;
@@ -46,7 +44,6 @@ import java.util.HashSet;
 
 
 public class KerberosAuthenticator {
-    private static final Log log = LogFactory.getLog(KerberosAuthenticator.class);
     private String serverPrincipal;
     private String realm;
     private File keyTabFile;
@@ -56,9 +53,13 @@ public class KerberosAuthenticator {
 
     /**
      * Authenticator initialize with the given kerberos parameters.
-     * @param serverPrincipal  a service or user that is known to the Kerberos system.
-     * @param realm a  domain name that is registered in Kerboros system.
-     * @param keyTabFilePath a path for generated keytab file where kerberos credentials encrypted.
+     *
+     * @param serverPrincipal a service or user that is known to the Kerberos system.
+     * @param realm           a domain name that is registered in Kerboros system.
+     * @param keyTabFilePath  a path for generated keytab file where kerberos credentials encrypted.
+     * @throws LoginException
+     * @throws PrivilegedActionException
+     * @throws GSSException
      */
     public KerberosAuthenticator(String serverPrincipal, String realm, String keyTabFilePath) throws LoginException,
             PrivilegedActionException, GSSException {
@@ -107,15 +108,15 @@ public class KerberosAuthenticator {
                                 mechOid, GSSCredential.ACCEPT_ONLY);
                     }
                 };
-
         return Subject.doAs(loginContext.getSubject(), action);
     }
 
     /**
      * Accept a client token to establish a secure communication channel with AD.
+     *
      * @param gssToken the client side token (client side, as in the token had
-     *        to be bootstrapped by the client and this peer uses that token
-     *        to update the GSSContext)
+     *                 to be bootstrapped by the client and this peer uses that token
+     *                 to update the GSSContext)
      * @return server tokens that the server sends over to the peer.
      * @throws GSSException
      */
@@ -131,8 +132,9 @@ public class KerberosAuthenticator {
 
     /**
      * State of the communication channel with the user token.
+     *
      * @return a boolean to indicate whether the token was used to successfully
-     *         establish a communication channel.
+     * establish a communication channel.
      */
     public boolean isEstablished() {
         return isEstablished;

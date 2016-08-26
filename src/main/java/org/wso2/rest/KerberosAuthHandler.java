@@ -90,7 +90,7 @@ public class KerberosAuthHandler implements Handler, ManagedLifecycle {
                         clientToken = Base64.decodeBase64(authToken.getBytes());
                         try {
                             serverToken = kerberosAuthenticator.processToken(clientToken);
-                            //TODO: what if the exception occurred when token invalid.
+                            //TODO: do we need to log token invalid exception.
                         } catch (GSSException ex) {
                             log.error("Exception accepting client token", ex);
                         }
