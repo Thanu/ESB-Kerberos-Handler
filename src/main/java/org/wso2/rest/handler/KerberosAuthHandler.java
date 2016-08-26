@@ -18,7 +18,7 @@
  *
  */
 
-package org.wso2.rest; // TODO: what should be the package name
+package org.wso2.rest.handler;
 
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.logging.Log;
@@ -28,7 +28,8 @@ import org.apache.synapse.MessageContext;
 import org.apache.synapse.core.SynapseEnvironment;
 import org.apache.synapse.core.axis2.Axis2MessageContext;
 import org.apache.synapse.core.axis2.Axis2Sender;
-import org.apache.synapse.rest.Handler;
+import org.apache.synapse.deployers.SynapseArtifactDeploymentException;
+import org.apache.synapse.rest.AbstractHandler;
 import org.ietf.jgss.GSSException;
 
 import javax.security.auth.login.LoginException;
@@ -38,9 +39,11 @@ import java.util.Map;
 /**
  * ESB rest handler for kerberos authentication in REST API request.
  */
-public class KerberosAuthHandler implements Handler, ManagedLifecycle {
+public class KerberosAuthHandler extends AbstractHandler implements ManagedLifecycle {
 
     private static Log log = LogFactory.getLog(KerberosAuthHandler.class);
+    private static final String NEGOTIATE = "Negotiate";
+    private static final String AUTHORIZATION = "Authorization";
     private KerberosAuthenticator kerberosAuthenticator;
     private String serverPrincipal;
     private String realm;
@@ -48,22 +51,21 @@ public class KerberosAuthHandler implements Handler, ManagedLifecycle {
 
     @Override
     public void init(SynapseEnvironment synapseEnvironment) {
-        if (serverPrincipal != null && realm != null && keyTabFilePath != null) {
-            try {
-                kerberosAuthenticator = new KerberosAuthenticator(serverPrincipal, realm, keyTabFilePath);
-                //TODO: what if the exception occurred while object initialize.
-            } catch (LoginException | PrivilegedActionException | GSSException ex) {
-                log.error(ex.getMessage(), ex);
-            }
+        if (serverPrincipal == null) {
+            throw new SynapseArtifactDeploymentException("KerberosAuthHandler serverPrincipal parameter is empty.");
         }
-    }
-
-    public void addProperty(String s, Object o) {
-        //To change body of implemented methods use File | Settings | File Templates.
-    }
-
-    public Map getProperties() {
-        return null;  //To change body of implemented methods use File | Settings | File Templates.
+        if (realm == null) {
+            throw new SynapseArtifactDeploymentException("KerberosAuthHandler realm parameter is empty.");
+        }
+        if (keyTabFilePath == null) {
+            throw new SynapseArtifactDeploymentException("KerberosAuthHandler keyTabFilePath parameter is empty.");
+        }
+        try {
+            kerberosAuthenticator = new KerberosAuthenticator(serverPrincipal, realm, keyTabFilePath);
+        } catch (LoginException | PrivilegedActionException | GSSException ex) {
+            log.error(ex.getMessage(), ex);
+            throw new SynapseArtifactDeploymentException(ex.getMessage(), ex);
+        }
     }
 
     public boolean handleResponse(MessageContext messageContext) {
@@ -71,7 +73,6 @@ public class KerberosAuthHandler implements Handler, ManagedLifecycle {
     }
 
     public boolean handleRequest(MessageContext messageContext) {
-        byte[] clientToken;
         byte[] serverToken = null;
         org.apache.axis2.context.MessageContext axis2MessageContext
                 = ((Axis2MessageContext) messageContext).getAxis2MessageContext();
@@ -79,27 +80,37 @@ public class KerberosAuthHandler implements Handler, ManagedLifecycle {
                 org.apache.axis2.context.MessageContext.TRANSPORT_HEADERS);
         if (headers != null && headers instanceof Map) {
             Map headersMap = (Map) headers;
-            if (headersMap.get("Authorization") == null) {
+            String authHeader = (String) headersMap.get(AUTHORIZATION);
+            if (authHeader == null) {
                 return unAuthorizedUser(headersMap, axis2MessageContext, messageContext, null);
             } else {
-                String authHeader = (String) headersMap.get("Authorization");
                 if (kerberosAuthenticator != null) {
                     String negotiate = authHeader.substring(0, 10);
-                    if ("Negotiate".equals(negotiate.trim())) {
+                    if (NEGOTIATE.equals(negotiate.trim())) {
                         String authToken = authHeader.substring(10).trim();
-                        clientToken = Base64.decodeBase64(authToken.getBytes());
+                        byte[] clientToken = Base64.decodeBase64(authToken.getBytes());
+                        ValidationResponse validationResponse = new ValidationResponse();
                         try {
-                            serverToken = kerberosAuthenticator.processToken(clientToken);
-                            //TODO: do we need to log token invalid exception.
+                            validationResponse = kerberosAuthenticator.processToken(clientToken);
+                            serverToken = validationResponse.getInformation();
                         } catch (GSSException ex) {
-                            log.error("Exception accepting client token", ex);
+                            if (log.isDebugEnabled()) {
+                                log.debug(ex.getMessage(), ex);
+                            }
                         }
-                        if (kerberosAuthenticator.isEstablished()) {
+                        if (validationResponse.isSuccessful()) {
                             return authorized(axis2MessageContext);
                         } else {
+                            if (log.isDebugEnabled()) {
+                                log.debug("More tokens are expected to be supplied to start the context creation " +
+                                        "phase.");
+                            }
                             return unAuthorizedUser(headersMap, axis2MessageContext, messageContext, serverToken);
                         }
                     } else {
+                        if (log.isDebugEnabled()) {
+                            log.debug("Negotiate header is missing.");
+                        }
                         return unAuthorizedUser(headersMap, axis2MessageContext, messageContext, null);
                     }
                 } else {
@@ -130,7 +141,6 @@ public class KerberosAuthHandler implements Handler, ManagedLifecycle {
             messageContext.setTo(null);
             Axis2Sender.sendBack(messageContext);
             return false;
-
         } catch (Exception e) {
             return false;
         }
@@ -152,7 +162,6 @@ public class KerberosAuthHandler implements Handler, ManagedLifecycle {
         return false;
     }
 
-    //TODO: currently handler property set by setter method.
     public void setServerPrincipal(String serverPrincipal) {
         this.serverPrincipal = serverPrincipal;
     }
@@ -167,6 +176,5 @@ public class KerberosAuthHandler implements Handler, ManagedLifecycle {
 
     @Override
     public void destroy() {
-        //TODO: Do we need handle this scenario.
     }
 }

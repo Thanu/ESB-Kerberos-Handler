@@ -18,7 +18,7 @@
  *
  */
 
-package org.wso2.rest;
+package org.wso2.rest.handler;
 
 import org.ietf.jgss.GSSCredential;
 import org.ietf.jgss.GSSException;
@@ -37,26 +37,26 @@ import java.io.File;
 import java.security.Principal;
 import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
-import java.util.HashSet;
 
 
 public class KerberosAuthenticator {
-    private String serverPrincipal;
-    private String realm;
-    private File keyTabFile;
-    private boolean isEstablished;
-    private GSSCredential kerberosCredentials;
-    private GSSManager gssManager = GSSManager.getInstance();
+    private final String serverPrincipal;
+    private final String realm;
+    private final File keyTabFile;
+    private final GSSCredential kerberosCredentials;
+    private final GSSManager gssManager = GSSManager.getInstance();
 
     /**
      * Authenticator initialize with the given kerberos parameters.
      *
      * @param serverPrincipal a service or user that is known to the Kerberos system.
      * @param realm           a domain name that is registered in Kerboros system.
-     * @param keyTabFilePath  a path for generated keytab file where kerberos credentials encrypted.
+     * @param keyTabFilePath  a path for generated keytab file where Kerberos credentials encrypted.
      * @throws LoginException
      * @throws PrivilegedActionException
      * @throws GSSException
@@ -96,16 +96,15 @@ public class KerberosAuthenticator {
         Set<Principal> principals = new HashSet<Principal>();
         Principal principal = new KerberosPrincipal(serverPrincipal, KerberosPrincipal.KRB_NT_SRV_INST);
         principals.add(principal);
-        Subject subject = new Subject(false, principals, new HashSet<Object>(),
-                new HashSet<Object>());
+        Subject subject = new Subject(false, principals, Collections.emptySet(), Collections.emptySet());
         LoginContext loginContext = new LoginContext("Server", subject, null, getKerberosConfigguration());
         loginContext.login();
-        final Oid mechOid = new Oid("1.3.6.1.5.5.2");
+        final Oid mechanismId = new Oid("1.3.6.1.5.5.2"); // SPNEGO pseudo-mechanism
         PrivilegedExceptionAction<GSSCredential> action =
                 new PrivilegedExceptionAction<GSSCredential>() {
                     public GSSCredential run() throws GSSException {
                         return gssManager.createCredential(null, GSSCredential.INDEFINITE_LIFETIME,
-                                mechOid, GSSCredential.ACCEPT_ONLY);
+                                mechanismId, GSSCredential.ACCEPT_ONLY);
                     }
                 };
         return Subject.doAs(loginContext.getSubject(), action);
@@ -117,30 +116,16 @@ public class KerberosAuthenticator {
      * @param gssToken the client side token (client side, as in the token had
      *                 to be bootstrapped by the client and this peer uses that token
      *                 to update the GSSContext)
-     * @return server tokens that the server sends over to the peer.
+     * @return ValidationResponse server token information and context connection information.
      * @throws GSSException
      */
-    public byte[] processToken(byte[] gssToken) throws GSSException {
-        setContextEstablished(false);
+    public ValidationResponse processToken(byte[] gssToken) throws GSSException {
+        ValidationResponse validationResponse = new ValidationResponse();
         GSSContext context = gssManager.createContext(kerberosCredentials);
-        byte[] serverToken = context.acceptSecContext(gssToken, 0, gssToken.length);
+        validationResponse.setInformation(context.acceptSecContext(gssToken, 0, gssToken.length));
         if (context.isEstablished()) {
-            setContextEstablished(true);
+            validationResponse.setSuccessful(true);
         }
-        return serverToken;
-    }
-
-    /**
-     * State of the communication channel with the user token.
-     *
-     * @return a boolean to indicate whether the token was used to successfully
-     * establish a communication channel.
-     */
-    public boolean isEstablished() {
-        return isEstablished;
-    }
-
-    private void setContextEstablished(boolean established) {
-        isEstablished = established;
+        return validationResponse;
     }
 }
