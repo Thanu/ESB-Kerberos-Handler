@@ -41,7 +41,7 @@ import java.util.Map;
  */
 public class KerberosAuthHandler extends AbstractHandler implements ManagedLifecycle {
 
-    private static Log log = LogFactory.getLog(KerberosAuthHandler.class);
+    private static final Log log = LogFactory.getLog(KerberosAuthHandler.class);
     private static final String NEGOTIATE = "Negotiate";
     private static final String AUTHORIZATION = "Authorization";
     private KerberosAuthenticator kerberosAuthenticator;
